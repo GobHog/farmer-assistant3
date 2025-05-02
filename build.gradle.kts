@@ -30,7 +30,7 @@ dependencies {
     implementation("org.postgresql:postgresql:42.7.1") // версия зависит от времени, можно самую свежую
     implementation("org.mindrot:jbcrypt:0.4")
     implementation("io.ktor:ktor-server-status-pages:2.3.12")
-
+    implementation("com.sun.mail:javax.mail:1.6.2")
     implementation(libs.ktor.server.core)
     implementation(libs.ktor.server.content.negotiation)
     implementation(libs.ktor.server.auth)

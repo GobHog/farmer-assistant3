@@ -1,6 +1,7 @@
 package com.example
 
 import RegistrationRequest
+import UserFull
 import kotlinx.coroutines.Dispatchers
 import kotlinx.serialization.Serializable
 import org.jetbrains.exposed.sql.*
@@ -18,7 +19,8 @@ data class ExposedUser(
         val password: String,
         val photo: ByteArray?,
         val group_id: Long?,
-        val role_id:Long?
+        val role_id:Long?,
+        val email_confirmed:Boolean,
 )
 
 
@@ -33,6 +35,7 @@ class UserService(database: Database) {
         val photo = binary("Photo").nullable()  // photo может быть NULL
         val group_id = long("Group_id").nullable()  // group_id может быть NULL
         val role_id = long("Role_id").nullable()  // role_id может быть NULL
+        val email_confirmed=bool("Email_confirmed")
         override val primaryKey = PrimaryKey(user_id)
     }
 
@@ -61,6 +64,7 @@ class UserService(database: Database) {
                 it[photo] = user.photo
                 it[group_id] = user.group_id
                 it[role_id] = user.role_id
+                it[email_confirmed]=user.email_confirmed
             }[Users.user_id]
         }
     }
@@ -72,7 +76,7 @@ class UserService(database: Database) {
                 .where { Users.user_id eq id }
                 .map { ExposedUser(it[Users.surname], it[Users.name],
                     it[Users.patronymic],  it[Users.mail], it[Users.password],
-                    it[Users.photo], it[Users.group_id], it[Users.role_id]) }
+                    it[Users.photo], it[Users.group_id], it[Users.role_id], it[Users.email_confirmed]) }
                 .singleOrNull()
         }
     }
@@ -81,29 +85,31 @@ class UserService(database: Database) {
             Users.selectAll()
                 .map { ExposedUser(it[Users.surname], it[Users.name],
                     it[Users.patronymic],  it[Users.mail], it[Users.password],
-                    it[Users.photo], it[Users.group_id], it[Users.role_id])
+                    it[Users.photo], it[Users.group_id], it[Users.role_id], it[Users.email_confirmed])
                 }
         }
 
     }
-    suspend fun getUserByEmail(mail: String): RegistrationRequest? {
+    suspend fun getUserByEmail(mail: String): UserFull? {
         return dbQuery {
             val result = Users.selectAll().where { Users.mail eq mail }.singleOrNull()
 //            val result = Users.selectAll().firstOrNull { it[Users.mail] == mail }
             result?.let {
-                RegistrationRequest(
+                UserFull(
+                    user_id = it[Users.user_id],
                     surname = it[Users.surname],
                     name = it[Users.name],
+                    patronymic = it[Users.patronymic],
                     mail = it[Users.mail],
-                    password = it[Users.password]
+                    password = it[Users.password],
+                    photo = it[Users.photo],
+                    group_id = it[Users.group_id],
+                    role_id = it[Users.role_id],
+                    email_confirmed = it[Users.email_confirmed]
                 )
             }
         }
     }
-
-
-
-
 
     suspend fun update(id: Long, user: ExposedUser) {
         dbQuery {
@@ -116,6 +122,13 @@ class UserService(database: Database) {
                 it[photo] = user.photo
                 it[group_id] = user.group_id
                 it[role_id] = user.role_id
+            }
+        }
+    }
+    suspend fun updateEmailConfirmationStatus(userId: Long, confirmed: Boolean) {
+        dbQuery {
+            Users.update({ Users.user_id eq userId }) {
+                it[email_confirmed] = confirmed
             }
         }
     }

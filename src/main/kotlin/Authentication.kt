@@ -1,5 +1,6 @@
 import com.auth0.jwt.JWT
 import com.auth0.jwt.algorithms.Algorithm
+import com.auth0.jwt.exceptions.JWTVerificationException
 import com.example.ExposedUser
 import com.example.UserService
 import io.ktor.server.application.*
@@ -14,7 +15,11 @@ import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 import org.jetbrains.exposed.sql.Database
 import org.mindrot.jbcrypt.BCrypt
+import java.util.*
 import java.util.logging.Logger
+import javax.mail.*
+import javax.mail.internet.InternetAddress
+import javax.mail.internet.MimeMessage
 
 
 fun Application.configureAuthentication() {
@@ -33,11 +38,8 @@ fun Application.configureAuthentication() {
             val user = call.receive<RegistrationRequest>()
 
             val existingUser = userService.getUserByEmail(user.mail)
-//            logger.info("Проверка существования пользователя с email: ${user.mail}")
-//            println(existingUser.toString())
 
             if (existingUser != null) {
-//                logger.warning("Почта уже используется: ${user.mail}")
                 call.respond(
                     HttpStatusCode.BadRequest,
                     RegisterResponse(success = false, message = "Почта уже используется")
@@ -45,27 +47,49 @@ fun Application.configureAuthentication() {
                 return@post
             }
 
+            // Хешируем пароль для сохранения в базе данных
             val hashedPassword = BCrypt.hashpw(user.password, BCrypt.gensalt())
-            val newUser = ExposedUser(user.surname, user.name, null, user.mail, hashedPassword, null, null, null)
+
+            // Создаем нового пользователя с email, но email_confirmed по умолчанию ставим false
+            val newUser = ExposedUser(
+                surname = user.surname,
+                name = user.name,
+                patronymic = null,
+                mail = user.mail,
+                password = hashedPassword,
+                photo = null,
+                group_id = null,
+                role_id = null,
+                email_confirmed = false // Почта не подтверждена на момент регистрации
+            )
 
             try {
-//                logger.info("Попытка создать нового пользователя: ${user.mail}")
+                // Сохраняем нового пользователя в базе данных
                 userService.create(newUser)
-//                logger.info("Пользователь успешно зарегистрирован: ${user.mail}")
+
+                // Генерация ссылки для подтверждения почты
+                val confirmationLink = generateConfirmationLink(user.mail)
+
+                // Отправляем письмо с подтверждением
+                sendEmail(
+                    to = user.mail,
+                    subject = "Подтверждение почты",
+                    content = "Перейдите по следующей ссылке для подтверждения почты: $confirmationLink"
+                )
+
                 call.respond(
                     HttpStatusCode.Created,
-                    RegisterResponse(success = true, message = "User registered successfully")
+                    RegisterResponse(
+                        success = true,
+                        message = "Пользователь зарегистрирован, проверьте почту для подтверждения"
+                    )
                 )
             } catch (e: IllegalArgumentException) {
-//                logger.severe("Ошибка при регистрации пользователя: ${e.message}")
-//                println("Ошибка при регистрации: ${e.message}")
                 call.respond(
                     HttpStatusCode.BadRequest,
                     RegisterResponse(success = false, message = e.message ?: "Ошибка при регистрации")
                 )
             } catch (e: Exception) {
-//                logger.severe("Необработанная ошибка при регистрации: ${e.message}")
-//                println("Необработанная ошибка: ${e.message}")
                 call.respond(
                     HttpStatusCode.InternalServerError,
                     RegisterResponse(success = false, message = "Внутренняя ошибка сервера")
@@ -73,27 +97,80 @@ fun Application.configureAuthentication() {
             }
         }
 
+        get("/confirm-email") {
+            val token = call.request.queryParameters["token"]
+
+            if (token != null) {
+                try {
+                    val decodedJWT = JWT.require(Algorithm.HMAC256("mySuperSecretKey"))
+                        .withIssuer("ktor-app")
+                        .build()
+                        .verify(token)
+
+                    val email = decodedJWT.claims["email"]?.asString()
+
+                    if (email != null) {
+                        val user = userService.getUserByEmail(email)
+                        if (user != null && !user.email_confirmed) {
+                            userService.updateEmailConfirmationStatus(user.user_id, true)
+
+                            call.respond(
+                                HttpStatusCode.OK,
+                                "Почта подтверждена. Вы можете войти."
+                            )
+                        } else {
+                            call.respond(HttpStatusCode.BadRequest, "Невозможно подтвердить почту.")
+                        }
+                    } else {
+                        call.respond(HttpStatusCode.BadRequest, "Неверный токен.")
+                    }
+                } catch (e: JWTVerificationException) {
+                    call.respond(HttpStatusCode.BadRequest, "Неверный токен.")
+                }
+            } else {
+                call.respond(HttpStatusCode.BadRequest, "Токен не предоставлен.")
+            }
+        }
+
+
+
 
         // Логин и получение JWT токена
         post("/login") {
-            val user = call.receive<RegistrationRequest>()
+            val user = call.receive<LoginRequest>()
 
-            // Получаем пользователя из базы по email
+            if (user.mail.isBlank() || user.password.isBlank()) {
+                call.respond(HttpStatusCode.BadRequest, "Email и пароль обязательны")
+                return@post
+            }
+
             val storedUser = userService.getUserByEmail(user.mail)
+
             if (storedUser != null) {
+                // 🔐 Проверка подтверждения email
+                if (!storedUser.email_confirmed) {
+                    call.respond(HttpStatusCode.Forbidden, "Подтвердите вашу почту перед входом")
+                    return@post
+                }
+
                 if (BCrypt.checkpw(user.password, storedUser.password)) {
-                    val token = createJWT(storedUser.mail)  // Используем email для токена
-                    logger.info("Пользователь авторизован: ${storedUser.mail}")
-                    call.respond(HttpStatusCode.OK, mapOf("token" to token))
+                    val token = createJWT(storedUser.mail)
+                    call.respond(
+                        HttpStatusCode.OK,
+                        LoginResponse(
+                            success = true,
+                            message = "Успешный вход",
+                            token = token
+                        )
+                    )
                 } else {
-                    logger.warning("Неверный пароль для пользователя: ${user.mail}")
-                    call.respond(HttpStatusCode.Unauthorized, "Invalid credentials")
+                    call.respond(HttpStatusCode.Unauthorized, "Неверные учетные данные")
                 }
             } else {
-                logger.warning("Пользователь не найден: ${user.mail}")
-                call.respond(HttpStatusCode.Unauthorized, "Invalid credentials")
+                call.respond(HttpStatusCode.Unauthorized, "Неверные учетные данные")
             }
         }
+
     }
 }
 
@@ -104,8 +181,44 @@ fun createJWT(email: String): String {
         .withClaim("email", email)
         .sign(algorithm)
 }
-
-// Сохранение нового пользователя в базе данных
-fun saveUserToDatabase(user: RegistrationRequest) {
-    // Реализуйте сохранение пользователя в базу данных
+fun generateConfirmationLink(email: String): String {
+    val token = createJWT(email) // Генерация токена с email
+    return "http://localhost:8080/confirm-email?token=$token" // Ссылка для подтверждения
 }
+
+fun sendEmail(to: String, subject: String, content: String) {
+    val fromEmail = "noreply.farmer_assistant@mail.ru"
+    val password = "im67hQxTYp3PBxmcqHzR" // Пароль приложения или обычный (если включен)
+
+    val props = Properties().apply {
+        put("mail.smtp.host", "smtp.mail.ru")
+        put("mail.smtp.port", "465")
+        put("mail.smtp.auth", "true")
+        put("mail.smtp.socketFactory.port", "465")
+        put("mail.smtp.socketFactory.class", "javax.net.ssl.SSLSocketFactory")
+        put("mail.smtp.socketFactory.fallback", "false")
+    }
+
+    val session = Session.getInstance(props, object : Authenticator() {
+        override fun getPasswordAuthentication(): PasswordAuthentication {
+            return PasswordAuthentication(fromEmail, password)
+        }
+    })
+
+    try {
+        val message = MimeMessage(session).apply {
+            setFrom(InternetAddress(fromEmail))
+            setRecipients(Message.RecipientType.TO, InternetAddress.parse(to))
+            setSubject(subject) // Используй метод setSubject, а не просто присваивание
+            setText(content)
+        }
+
+
+        Transport.send(message)
+        println("Письмо отправлено на $to")
+    } catch (e: MessagingException) {
+        e.printStackTrace()
+        println("Ошибка при отправке письма: ${e.message}")
+    }
+}
+

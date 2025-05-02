@@ -2,6 +2,7 @@ package com.example
 
 import ch.qos.logback.core.net.ssl.SSL
 import configureAuthentication
+import configureGroupRoutes
 import io.ktor.server.application.*
 import io.ktor.server.engine.*
 import io.ktor.server.netty.*
@@ -52,4 +53,5 @@ fun Application.module() {
     configureDatabases()
     configureRouting()
     configureAuthentication()
+    configureGroupRoutes()
 }
