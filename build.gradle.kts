@@ -39,6 +39,7 @@ dependencies {
     implementation(libs.ktor.server.auth.jwt)
     implementation(libs.exposed.core)
     implementation(libs.exposed.jdbc)
+    implementation(libs.exposed.time)
     implementation(libs.h2)
     implementation(libs.ktor.server.netty)
     implementation(libs.logback.classic)

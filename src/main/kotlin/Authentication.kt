@@ -47,10 +47,8 @@ fun Application.configureAuthentication() {
                 return@post
             }
 
-            // Хешируем пароль для сохранения в базе данных
             val hashedPassword = BCrypt.hashpw(user.password, BCrypt.gensalt())
 
-            // Создаем нового пользователя с email, но email_confirmed по умолчанию ставим false
             val newUser = ExposedUser(
                 surname = user.surname,
                 name = user.name,
@@ -60,17 +58,16 @@ fun Application.configureAuthentication() {
                 photo = null,
                 group_id = null,
                 role_id = null,
-                email_confirmed = false // Почта не подтверждена на момент регистрации
+                email_confirmed = false
             )
 
             try {
-                // Сохраняем нового пользователя в базе данных
-                userService.create(newUser)
+                // Сохраняем пользователя и получаем его ID
+                val userId = userService.create(newUser)
 
-                // Генерация ссылки для подтверждения почты
-                val confirmationLink = generateConfirmationLink(user.mail)
+                // Генерируем ссылку с userId
+                val confirmationLink = generateConfirmationLink(user.mail, userId)
 
-                // Отправляем письмо с подтверждением
                 sendEmail(
                     to = user.mail,
                     subject = "Подтверждение почты",
@@ -96,6 +93,7 @@ fun Application.configureAuthentication() {
                 )
             }
         }
+
 
         get("/confirm-email") {
             val token = call.request.queryParameters["token"]
@@ -153,17 +151,24 @@ fun Application.configureAuthentication() {
                     return@post
                 }
 
+                // Проверка пароля
                 if (BCrypt.checkpw(user.password, storedUser.password)) {
-                    val token = createJWT(storedUser.mail)
-                    call.respond(
-                        HttpStatusCode.OK,
-                        LoginResponse(
-                            success = true,
-                            message = "Успешный вход",
-                            token = token
-                        )
+                    val token = createJWT(storedUser.mail, storedUser.user_id)
+
+                    // Создаем объект ответа
+                    val response = LoginResponse(
+                        success = true,
+                        message = "Успешный вход",
+                        group_id = storedUser.group_id,  // Добавляем group_id
+                        token = token
                     )
-                } else {
+//                    // Логирование ответа перед отправкой
+//                    println("Sending response: $response")  // Логирование ответа
+
+                    // Отправляем ответ с токеном и group_id
+                    call.respond(HttpStatusCode.OK, response)
+                }
+                else {
                     call.respond(HttpStatusCode.Unauthorized, "Неверные учетные данные")
                 }
             } else {
@@ -171,18 +176,21 @@ fun Application.configureAuthentication() {
             }
         }
 
+
     }
 }
 
-fun createJWT(email: String): String {
+fun createJWT(email: String, userId: Long): String {
     val algorithm = Algorithm.HMAC256("mySuperSecretKey")
     return JWT.create()
         .withIssuer("ktor-app")
         .withClaim("email", email)
+        .withClaim("user_id", userId) // <-- добавляем user_id
         .sign(algorithm)
 }
-fun generateConfirmationLink(email: String): String {
-    val token = createJWT(email) // Генерация токена с email
+
+fun generateConfirmationLink(email: String, id: Long): String {
+    val token = createJWT(email, id) // Генерация токена с email
     return "http://localhost:8080/confirm-email?token=$token" // Ссылка для подтверждения
 }
 

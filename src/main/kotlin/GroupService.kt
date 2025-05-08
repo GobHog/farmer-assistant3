@@ -10,12 +10,14 @@ import kotlin.text.insert
 @Serializable
 data class ExposedGroup(
     val name: String,
+    @Serializable(with = ByteArrayBase64Serializer::class)
     val photo: ByteArray? = null
 )
 
+
 class GroupService(database: Database) {
     object Groups : Table("Group") {
-        val group_id = long("Group_id").autoIncrement()
+        val group_id = long("ID_Group").autoIncrement()
         val name = varchar("Name", length = 100)
         val photo = binary("Photo").nullable()
         override val primaryKey = PrimaryKey(group_id)
@@ -31,10 +33,20 @@ class GroupService(database: Database) {
         return dbQuery {
             Groups.insert {
                 it[name] = group.name
-                it[photo] = group.photo
+                if (group.photo != null) {
+                    it[photo] = group.photo
+                }
             }[Groups.group_id]
         }
     }
+    suspend fun attachUserToGroup(userId: Long, groupId: Long) {
+        dbQuery {
+            UserService.Users.update({ UserService.Users.user_id eq userId }) {
+                it[UserService.Users.group_id] = groupId
+            }
+        }
+    }
+
 
     suspend fun read(id: Long): ExposedGroup? {
         return dbQuery {
@@ -75,5 +87,3 @@ class GroupService(database: Database) {
         }
     }
 }
-private suspend fun <T> dbQuery(block: suspend () -> T): T =
-    newSuspendedTransaction(Dispatchers.IO) { block() }

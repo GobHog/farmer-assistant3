@@ -26,7 +26,7 @@ data class ExposedUser(
 
 class UserService(database: Database) {
     object Users : Table("User") {
-        val user_id = long("User_id").autoIncrement()  // изменено на long для bigint
+        val user_id = long("ID_User").autoIncrement()  // изменено на long для bigint
         val surname = varchar("Surname", length = 50)
         val name = varchar("Name", length = 50)
         val patronymic = varchar("Patronymic", length = 50).nullable()
@@ -35,7 +35,7 @@ class UserService(database: Database) {
         val photo = binary("Photo").nullable()  // photo может быть NULL
         val group_id = long("Group_id").nullable()  // group_id может быть NULL
         val role_id = long("Role_id").nullable()  // role_id может быть NULL
-        val email_confirmed=bool("Email_confirmed")
+        val email_confirmed=bool("Mail_confirmed")
         override val primaryKey = PrimaryKey(user_id)
     }
 
@@ -110,7 +110,13 @@ class UserService(database: Database) {
             }
         }
     }
-
+    suspend fun updateUserGroup(user_id: Long, group_id:Long):Unit {
+        dbQuery {
+            Users.update({ Users.user_id eq user_id }) {
+                it[Users.group_id] = group_id
+            }
+        }
+    }
     suspend fun update(id: Long, user: ExposedUser) {
         dbQuery {
             Users.update({ Users.user_id eq id }) {

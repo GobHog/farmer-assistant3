@@ -2,7 +2,9 @@ import kotlinx.serialization.Serializable
 
 @Serializable
 data class GroupRequest(
+    val token: String,
     val name: String,
-    val photo: ByteArray? = null // Массив байт для хранения изображения
+    val photo: String? = null // Base64 строка
 )
+
 

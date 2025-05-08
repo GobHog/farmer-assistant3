@@ -3,11 +3,13 @@ package com.example
 import ch.qos.logback.core.net.ssl.SSL
 import configureAuthentication
 import configureGroupRoutes
+import configureGroupTaskRoutes
 import io.ktor.server.application.*
 import io.ktor.server.engine.*
 import io.ktor.server.netty.*
 import java.io.File
 import io.ktor.server.engine.sslConnector
+import org.jetbrains.exposed.sql.Database
 import java.io.FileInputStream
 import java.security.KeyStore
 
@@ -50,8 +52,11 @@ fun Application.module() {
     configureSerialization()
     configureSecurity()
     configureMonitoring()
-    configureDatabases()
-    configureRouting()
     configureAuthentication()
+
+    configureDatabases() // Передаём нужные сервисы в конкретные функции
     configureGroupRoutes()
+    configureGroupTaskRoutes()
 }
+
+
