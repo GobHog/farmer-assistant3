@@ -1,6 +1,7 @@
 import com.example.UserService
 import kotlinx.coroutines.Dispatchers
 import kotlinx.serialization.Serializable
+import org.jetbrains.exposed.dao.id.IdTable
 import org.jetbrains.exposed.sql.*
 import org.jetbrains.exposed.sql.SqlExpressionBuilder.eq
 import org.jetbrains.exposed.sql.transactions.experimental.newSuspendedTransaction
@@ -16,12 +17,14 @@ data class ExposedGroup(
 
 
 class GroupService(database: Database) {
-    object Groups : Table("Group") {
-        val group_id = long("ID_Group").autoIncrement()
+    object Groups : IdTable<Long>("\"Group\"") {
+        override val id = long("ID_Group").autoIncrement().entityId()
         val name = varchar("Name", length = 100)
         val photo = binary("Photo").nullable()
-        override val primaryKey = PrimaryKey(group_id)
+
+        override val primaryKey = PrimaryKey(id)  // ← ОБЯЗАТЕЛЬНО override
     }
+
 
     init {
         transaction(database) {
@@ -36,12 +39,12 @@ class GroupService(database: Database) {
                 if (group.photo != null) {
                     it[photo] = group.photo
                 }
-            }[Groups.group_id]
+            }[Groups.id].value
         }
     }
     suspend fun attachUserToGroup(userId: Long, groupId: Long) {
         dbQuery {
-            UserService.Users.update({ UserService.Users.user_id eq userId }) {
+            UserService.Users.update({ UserService.Users.id eq userId }) {
                 it[UserService.Users.group_id] = groupId
             }
         }
@@ -51,7 +54,7 @@ class GroupService(database: Database) {
     suspend fun read(id: Long): ExposedGroup? {
         return dbQuery {
             Groups.selectAll()
-                .where { Groups.group_id eq id }
+                .where { Groups.id eq id }
                 .map {
                     ExposedGroup(
                         name = it[Groups.name],
@@ -76,13 +79,24 @@ class GroupService(database: Database) {
     }
     suspend fun getGroupById(id: Long): ExposedGroup? {
         return dbQuery {
-            val result =Groups.selectAll().where { Groups.group_id eq id }.singleOrNull()
+            val result =Groups.selectAll().where { Groups.id eq id }.singleOrNull()
             result?.let {
                 ExposedGroup(
                     name = it[Groups.name],
                     photo = it[Groups.photo]
 
                 )
+            }
+        }
+    }
+    suspend fun groupExists(groupId: Long): Boolean = dbQuery {
+        Groups.selectAll().where { Groups.id eq groupId }.count() > 0
+    }
+    suspend fun update(groupId: Long, updatedGroup: ExposedGroup) {
+        dbQuery {
+            Groups.update({ Groups.id eq groupId }) {
+                it[name] = updatedGroup.name
+                it[photo] = updatedGroup.photo
             }
         }
     }

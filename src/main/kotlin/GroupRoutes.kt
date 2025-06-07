@@ -13,13 +13,15 @@ import java.util.*
 
 fun Application.configureGroupRoutes() {
     val database = Database.connect(
-        url = "jdbc:postgresql://localhost:5432/backend_db",
+        url = "jdbc:postgresql://${System.getenv("DB_HOST")}:${System.getenv("DB_PORT")}/${System.getenv("DB_NAME")}",
         driver = "org.postgresql.Driver",
-        user = "postgres",
-        password = "123",
+        user = System.getenv("DB_USER"),
+        password = System.getenv("DB_PASSWORD")
     )
+
     val groupService = GroupService(database)
     val userService = UserService(database)
+    val userGroupTaskService=UserGroupTaskService(database)
     routing {
         // Создание группы
         post("/create-group") {
@@ -133,11 +135,101 @@ fun Application.configureGroupRoutes() {
                 call.respond(HttpStatusCode.InternalServerError, "Ошибка при присоединении к группе")
             }
         }
+        get("/group/{id}/members") {
+            val groupId = call.parameters["id"]?.toLongOrNull()
+            if (groupId != null) {
+                val members = userService.getMembersByGroupId(groupId)
+
+                call.respond(members)
+            } else {
+                call.respond(HttpStatusCode.BadRequest, "Invalid group ID")
+            }
+        }
+        post("/group/leave") {
+            try {
+                val token = call.request.headers["Authorization"]?.removePrefix("Bearer ")
+                if (token.isNullOrBlank()) {
+                    call.respond(HttpStatusCode.BadRequest, "Token is missing")
+                    return@post
+                }
+
+                val algorithm = Algorithm.HMAC256("mySuperSecretKey")
+                val verifier = JWT.require(algorithm)
+                    .withIssuer("ktor-app")
+                    .build()
+                val decodedJWT = verifier.verify(token)
+                val userId = decodedJWT.getClaim("user_id").asLong()
+
+                if (userId == null) {
+                    call.respond(HttpStatusCode.Unauthorized, "Invalid or expired token")
+                    return@post
+                }
+
+                // ✅ Проверяем, существует ли пользователь
+                val userExists = userService.userExistsById(userId)
+                if (!userExists) {
+                    call.respond(HttpStatusCode.NotFound, "User not found")
+                    return@post
+                }
+
+                // 🗑 Удаляем все задачи пользователя из User_Group_task
+                userGroupTaskService.deleteAllTasksByUserId(userId)
+
+                // 🔄 Обнуляем group_id у пользователя
+                userService.removeUserFromGroup(userId)
+
+                call.respond(HttpStatusCode.OK, "Вы успешно вышли из группы")
+
+            } catch (e: Exception) {
+                e.printStackTrace()
+                call.respond(HttpStatusCode.InternalServerError, "Ошибка при выходе из группы")
+            }
+        }
+        put("/group/update") {
+            val request = call.receive<UpdateGroupRequest>()
+
+            val photoBytes = try {
+                if (!request.photo.isNullOrBlank()) {
+                    Base64.getDecoder().decode(request.photo)
+                } else null
+            } catch (e: Exception) {
+                e.printStackTrace()
+                null
+            }
 
 
+            val updatedGroup = ExposedGroup(
+                name = request.name,
+                photo = photoBytes
+            )
 
+            try {
+                val decodedJWT = JWT.require(Algorithm.HMAC256("mySuperSecretKey"))
+                    .withIssuer("ktor-app")
+                    .build()
+                    .verify(request.token)
 
+                val userId = decodedJWT.getClaim("user_id").asLong()
 
+                if (userId == null) {
+                    call.respond(HttpStatusCode.Unauthorized, "Invalid token")
+                    return@put
+                }
+
+                val groupExists = groupService.groupExists(request.groupId)
+                if (!groupExists) {
+                    call.respond(HttpStatusCode.NotFound, "Group not found")
+                    return@put
+                }
+
+                groupService.update(request.groupId, updatedGroup)
+
+                call.respond(HttpStatusCode.OK, MessageResponse("Группа обновлена"))
+            } catch (e: Exception) {
+                e.printStackTrace()
+                call.respond(HttpStatusCode.InternalServerError, "Ошибка при обновлении группы")
+            }
+        }
         // Получение информации о группе по ID
 //        get("/group/{id}") {
 //            val groupId = call.parameters["id"]?.toLongOrNull()

@@ -20,15 +20,16 @@ import java.util.logging.Logger
 import javax.mail.*
 import javax.mail.internet.InternetAddress
 import javax.mail.internet.MimeMessage
-
+import java.util.Base64
 
 fun Application.configureAuthentication() {
     val database = Database.connect(
-        url = "jdbc:postgresql://localhost:5432/backend_db",
+        url = "jdbc:postgresql://${System.getenv("DB_HOST")}:${System.getenv("DB_PORT")}/${System.getenv("DB_NAME")}",
         driver = "org.postgresql.Driver",
-        user = "postgres",
-        password = "123",
+        user = System.getenv("DB_USER"),
+        password = System.getenv("DB_PASSWORD")
     )
+
     val userService = UserService(database)
     val logger = Logger.getLogger("RegistrationLogger")
 
@@ -154,16 +155,17 @@ fun Application.configureAuthentication() {
                 // Проверка пароля
                 if (BCrypt.checkpw(user.password, storedUser.password)) {
                     val token = createJWT(storedUser.mail, storedUser.user_id)
-
                     // Создаем объект ответа
                     val response = LoginResponse(
                         success = true,
                         message = "Успешный вход",
                         group_id = storedUser.group_id,  // Добавляем group_id
-                        token = token
+                        token = token,
+                        id = storedUser.user_id,  // Добавляем user_id здесь
+                        user= SettingsUser(storedUser.surname, storedUser.name, storedUser.patronymic, storedUser.mail, storedUser.photo.toString())
                     )
-//                    // Логирование ответа перед отправкой
-//                    println("Sending response: $response")  // Логирование ответа
+                    // Логирование ответа перед отправкой
+//                    println("Sending response: ${storedUser.group_id}")  // Логирование ответа
 
                     // Отправляем ответ с токеном и group_id
                     call.respond(HttpStatusCode.OK, response)
@@ -187,6 +189,20 @@ fun createJWT(email: String, userId: Long): String {
         .withClaim("email", email)
         .withClaim("user_id", userId) // <-- добавляем user_id
         .sign(algorithm)
+}
+fun verifyTokenAndGetUserId(token: String): Long? {
+    return try {
+        val algorithm = Algorithm.HMAC256("mySuperSecretKey")
+        val verifier = JWT.require(algorithm)
+            .withIssuer("ktor-app")
+            .build()
+
+        val decodedJWT = verifier.verify(token)
+        decodedJWT.getClaim("user_id").asLong()  // <-- Получаем user_id
+    } catch (e: Exception) {
+        e.printStackTrace()
+        null
+    }
 }
 
 fun generateConfirmationLink(email: String, id: Long): String {

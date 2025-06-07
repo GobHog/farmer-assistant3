@@ -1,9 +1,11 @@
 package com.example
 
+import MemberForGroupResponse
 import RegistrationRequest
 import UserFull
 import kotlinx.coroutines.Dispatchers
 import kotlinx.serialization.Serializable
+import org.jetbrains.exposed.dao.id.IdTable
 import org.jetbrains.exposed.sql.*
 import org.jetbrains.exposed.sql.SqlExpressionBuilder.eq
 import org.jetbrains.exposed.sql.transactions.experimental.newSuspendedTransaction
@@ -25,18 +27,22 @@ data class ExposedUser(
 
 
 class UserService(database: Database) {
-    object Users : Table("User") {
-        val user_id = long("ID_User").autoIncrement()  // изменено на long для bigint
+    object Users : IdTable<Long>("\"User\"") {
+        override val id = long("ID_User").autoIncrement().entityId()  // изменено на long для bigint
         val surname = varchar("Surname", length = 50)
         val name = varchar("Name", length = 50)
         val patronymic = varchar("Patronymic", length = 50).nullable()
         val mail = varchar("Mail", length = 100).uniqueIndex()
         val password = text("Password")
         val photo = binary("Photo").nullable()  // photo может быть NULL
-        val group_id = long("Group_id").nullable()  // group_id может быть NULL
-        val role_id = long("Role_id").nullable()  // role_id может быть NULL
+        val group_id = long("Group_id").references(GroupService.Groups.id,
+        onDelete = ReferenceOption.CASCADE,
+        onUpdate = ReferenceOption.CASCADE).nullable()  // group_id может быть NULL
+        val role_id = long("Role_id").references(RoleService.Roles.id,
+            onDelete = ReferenceOption.CASCADE,
+            onUpdate = ReferenceOption.CASCADE).nullable()  // role_id может быть NULL
         val email_confirmed=bool("Mail_confirmed")
-        override val primaryKey = PrimaryKey(user_id)
+        override val primaryKey = PrimaryKey(id)
     }
 
     init {
@@ -65,7 +71,7 @@ class UserService(database: Database) {
                 it[group_id] = user.group_id
                 it[role_id] = user.role_id
                 it[email_confirmed]=user.email_confirmed
-            }[Users.user_id]
+            }[Users.id].value
         }
     }
 
@@ -73,7 +79,7 @@ class UserService(database: Database) {
     suspend fun read(id: Long): ExposedUser? {
         return dbQuery {
             Users.selectAll()
-                .where { Users.user_id eq id }
+                .where { Users.id eq id }
                 .map { ExposedUser(it[Users.surname], it[Users.name],
                     it[Users.patronymic],  it[Users.mail], it[Users.password],
                     it[Users.photo], it[Users.group_id], it[Users.role_id], it[Users.email_confirmed]) }
@@ -90,13 +96,31 @@ class UserService(database: Database) {
         }
 
     }
+    suspend fun getMembersByGroupId(id: Long): List<MemberForGroupResponse> {
+        return dbQuery {
+            Users.selectAll().where { Users.group_id eq id }.map {
+                MemberForGroupResponse(
+                    ID_User = it[Users.id].value,
+                    Surname = it[Users.surname],
+                    Name = it[Users.name],
+                    Patronymic = it[Users.patronymic] ?: ""  // Чтобы не было проблемы с null
+                )
+            }
+        }
+    }
+    suspend fun userExistsById(userId: Long): Boolean {
+        return dbQuery {
+            Users.select(Users.id).where { Users.id eq userId }.empty().not()
+        }
+    }
+
     suspend fun getUserByEmail(mail: String): UserFull? {
         return dbQuery {
             val result = Users.selectAll().where { Users.mail eq mail }.singleOrNull()
 //            val result = Users.selectAll().firstOrNull { it[Users.mail] == mail }
             result?.let {
                 UserFull(
-                    user_id = it[Users.user_id],
+                    user_id = it[Users.id].value,
                     surname = it[Users.surname],
                     name = it[Users.name],
                     patronymic = it[Users.patronymic],
@@ -112,14 +136,14 @@ class UserService(database: Database) {
     }
     suspend fun updateUserGroup(user_id: Long, group_id:Long):Unit {
         dbQuery {
-            Users.update({ Users.user_id eq user_id }) {
+            Users.update({ Users.id eq user_id }) {
                 it[Users.group_id] = group_id
             }
         }
     }
     suspend fun update(id: Long, user: ExposedUser) {
         dbQuery {
-            Users.update({ Users.user_id eq id }) {
+            Users.update({ Users.id eq id }) {
                 it[surname] = user.surname
                 it[name] = user.name
                 it[patronymic] = user.patronymic
@@ -133,7 +157,7 @@ class UserService(database: Database) {
     }
     suspend fun updateEmailConfirmationStatus(userId: Long, confirmed: Boolean) {
         dbQuery {
-            Users.update({ Users.user_id eq userId }) {
+            Users.update({ Users.id eq userId }) {
                 it[email_confirmed] = confirmed
             }
         }
@@ -141,10 +165,17 @@ class UserService(database: Database) {
 
     suspend fun delete(id: Long) {
         dbQuery {
-            Users.deleteWhere { Users.user_id.eq(id) }
+            Users.deleteWhere { Users.id.eq(id) }
         }
     }
 
+    suspend fun removeUserFromGroup(userId: Long) {
+        dbQuery {
+            Users.update({ Users.id eq userId }) {
+                it[group_id] = null
+            }
+        }
+    }
 
     private suspend fun <T> dbQuery(block: suspend () -> T): T =
         newSuspendedTransaction(Dispatchers.IO) { block() }

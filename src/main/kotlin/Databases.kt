@@ -1,5 +1,7 @@
 package com.example
 
+import UpdateProfileRequest
+import UpdateProfileResponse
 import com.auth0.jwt.JWT
 import com.auth0.jwt.algorithms.Algorithm
 import io.ktor.http.*
@@ -14,15 +16,19 @@ import io.ktor.server.response.*
 import io.ktor.server.routing.*
 import kotlinx.serialization.json.Json
 import org.jetbrains.exposed.sql.*
+import org.jetbrains.exposed.sql.SqlExpressionBuilder.eq
+import org.jetbrains.exposed.sql.transactions.transaction
 import org.slf4j.event.*
+import java.util.*
 
 fun Application.configureDatabases() {
     val database = Database.connect(
-        url = "jdbc:postgresql://localhost:5432/backend_db",
+        url = "jdbc:postgresql://${System.getenv("DB_HOST")}:${System.getenv("DB_PORT")}/${System.getenv("DB_NAME")}",
         driver = "org.postgresql.Driver",
-        user = "postgres",
-        password = "123",
+        user = System.getenv("DB_USER"),
+        password = System.getenv("DB_PASSWORD")
     )
+
     install(ContentNegotiation) {
         json(Json { prettyPrint = true; isLenient = true })
     }
@@ -70,5 +76,54 @@ fun Application.configureDatabases() {
             userService.delete(id)
             call.respond(HttpStatusCode.OK)
         }
+        post("/user/updateProfile") {
+            val request = call.receive<UpdateProfileRequest>()
+
+            val token = request.token
+            if (token == null) {
+                call.respond(HttpStatusCode.Unauthorized, UpdateProfileResponse(false, "Токен не предоставлен"))
+                return@post
+            }
+
+            // Проверяем токен и извлекаем mail
+            val userMail = extractMailFromToken(token)
+            if (userMail == null) {
+                call.respond(HttpStatusCode.Unauthorized, UpdateProfileResponse(false, "Невалидный токен"))
+                return@post
+            }
+
+            // Безопасно декодируем фото
+            val decodedPhoto: ByteArray? = request.photo?.takeIf { it.isNotBlank() }?.let {
+                try {
+                    Base64.getDecoder().decode(it)
+                } catch (e: Exception) {
+                    call.respond(HttpStatusCode.BadRequest, UpdateProfileResponse(false, "Некорректное фото"))
+                    return@post
+                }
+            }
+
+            transaction {
+                UserService.Users.update({ UserService.Users.mail eq userMail }) {
+                    it[name] = request.name
+                    it[surname] = request.surname
+                    it[patronymic] = request.patronymic
+                    it[photo] = decodedPhoto
+                }
+            }
+
+            call.respond(HttpStatusCode.OK, UpdateProfileResponse(true, "Профиль обновлён"))
+        }
+
+    }
+}
+fun extractMailFromToken(token: String): String? {
+    // Здесь мы используем библиотеку для декодирования и проверки JWT
+    // Это может быть JWT, созданный с использованием JWT-верификатора, например, с использованием `jwt-ktor` или `auth-jwt` библиотеки
+
+    try {
+        val jwt = JWT.decode(token)
+        return jwt.getClaim("email").asString()  // Извлекаем email из токена
+    } catch (e: Exception) {
+        return null
     }
 }
