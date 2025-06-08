@@ -1,5 +1,5 @@
 plugins {
-    alias(libs.plugins.kotlin.jvm)
+    kotlin("jvm") version "1.8.22"
     alias(libs.plugins.ktor)
     alias(libs.plugins.kotlin.plugin.serialization)
     id("com.github.johnrengelman.shadow") version "8.1.1"
@@ -24,12 +24,13 @@ repositories {
 }
 
 dependencies {
+    implementation("org.jetbrains.kotlin:kotlin-stdlib-jdk8:1.8.22")
     implementation("org.postgresql:postgresql:42.7.1")
     implementation("org.mindrot:jbcrypt:0.4")
     implementation("com.sun.mail:javax.mail:1.6.2")
     implementation("org.jsoup:jsoup:1.17.2")
     implementation("net.dankito.readability4j:readability4j:1.0.8")
-
+    implementation(libs.kotlinx.coroutines.core)
     // Ktor
     implementation(libs.ktor.server.core)
     implementation(libs.ktor.server.content.negotiation)
@@ -67,7 +68,16 @@ dependencies {
     testImplementation("org.junit.jupiter:junit-jupiter-api:5.7.0")
     testImplementation("org.junit.jupiter:junit-jupiter-engine:5.7.0")
 }
-
+configurations.all {
+    resolutionStrategy.eachDependency {
+        if (requested.group == "org.jetbrains.kotlin") {
+            useVersion("1.8.22")
+        }
+        if (requested.group == "org.jetbrains.kotlinx" && requested.name.startsWith("kotlinx-coroutines")) {
+            useVersion("1.6.4")
+        }
+    }
+}
 kotlin {
     jvmToolchain(8)
 }
