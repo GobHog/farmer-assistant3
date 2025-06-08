@@ -206,8 +206,8 @@ fun verifyTokenAndGetUserId(token: String): Long? {
 }
 
 fun generateConfirmationLink(email: String, id: Long): String {
-    val token = createJWT(email, id) // Генерация токена с email
-    val host = System.getenv("APP_HOST") ?: "http://31.128.51.62:8080"  // Получаем из переменных окружения или дефолт
+    val token = createJWT(email, id)
+    val host = System.getenv("APP_HOST") ?: "http://31.128.51.62:8080"
     return "$host/confirm-email?token=$token"
 }
 

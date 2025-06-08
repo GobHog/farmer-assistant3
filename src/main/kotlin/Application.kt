@@ -79,58 +79,64 @@ fun Application.module() {
             val newsArticleService = NewsArticleService(database)
 
             launch {
-                println("🕒 Получаем последние 5 новостей с https://iz.ru/tag/selskoe-khoziaistvo")
-
-                val latestNews = fetchLatestNews()
-                var addedAtLeastOne = false
-
-                for ((index, article) in latestNews.withIndex()) {
+                while (true) {
                     try {
-                        // Проверка на наличие дубликата по ссылке
-                        if (newsArticleService.existsByLink(article.url)) {
-                            println("⚠️ Новость уже существует в базе: ${article.url}")
-                            continue
+                        println("🕒 Запуск фоновой задачи: получение новостей")
+
+                        val latestNews = fetchLatestNews()
+                        var addedAtLeastOne = false
+
+                        for ((index, article) in latestNews.withIndex()) {
+                            try {
+                                if (newsArticleService.existsByLink(article.url)) {
+                                    println("⚠️ Новость уже существует в базе: ${article.url}")
+                                    continue
+                                }
+
+                                val articleText = fetchArticleText(article.url)
+                                val score = predictor.predict(articleText)
+
+                                if (score >= 0.5) {
+                                    println("\n✅ [${"%.2f".format(score * 100)}%] Новость ${index + 1}: ${article.content}")
+                                    println("🔗 URL: ${article.url}\n")
+
+                                    val newsArticle = ExposedNewsArticle(
+                                        content = articleText,
+                                        creation_date = LocalDate.now().toString(),
+                                        link = article.url
+                                    )
+                                    newsArticleService.create(newsArticle)
+                                    addedAtLeastOne = true
+                                    println("✅ Новость сохранена в базу данных.")
+                                }
+                            } catch (e: Exception) {
+                                println("❌ Ошибка при обработке статьи: ${e.message}")
+                            }
                         }
 
-                        val articleText = fetchArticleText(article.url)
-                        val score = predictor.predict(articleText)
+                        if (addedAtLeastOne || SummaryStorage.lastSummary.isBlank()) {
+                            println("📥 Извлекаем 5 последних сохранённых новостей из БД...")
+                            val recentNews = newsArticleService.readLatest5()
 
-                        if (score >= 0.5) {
-                            println("\n✅ [${"%.2f".format(score * 100)}%] Новость ${index + 1}: ${article.content}")
-                            println("🔗 URL: ${article.url}\n")
+                            recentNews.forEachIndexed { i, news ->
+                                println("📰 ${i + 1}) ${news.content.take(100)}...")
+                            }
 
-                            val newsArticle = ExposedNewsArticle(
-                                content = articleText,
-                                creation_date = LocalDate.now().toString(),
-                                link = article.url
-                            )
-                            newsArticleService.create(newsArticle)
-                            addedAtLeastOne = true
-                            println("✅ Новость сохранена в базу данных.")
+                            val combinedText = recentNews.joinToString("\n\n") { "• ${it.content}" }
+                            val summary = getSummaryFromOllama(combinedText.take(3000))
+
+                            println("\n📝 Выжимка по последним новостям:\n$summary")
+                        } else {
+                            println("ℹ️ Новостей не добавлено, и выжимка уже существует.")
                         }
+
+                        println("✅ Завершение итерации фоновой задачи")
                     } catch (e: Exception) {
-                        println("❌ Ошибка при обработке статьи: ${e.message}")
-                    }
-                }
-
-                // Даже если новостей не добавлено, но выжимка отсутствует — создаём её
-                if (addedAtLeastOne || SummaryStorage.lastSummary.isBlank()) {
-                    println("📥 Извлекаем 5 последних сохранённых новостей из БД...")
-                    val recentNews = newsArticleService.readLatest5()
-
-                    recentNews.forEachIndexed { i, news ->
-                        println("📰 ${i + 1}) ${news.content.take(100)}...")
+                        println("❌ Ошибка в фоновой задаче: ${e.message}")
                     }
 
-                    val combinedText = recentNews.joinToString("\n\n") { "• ${it.content}" }
-                    val summary = getSummaryFromOllama(combinedText.take(3000))
-
-                    println("\n📝 Выжимка по последним новостям:\n$summary")
-                } else {
-                    println("ℹ️ Новостей не добавлено, и выжимка уже существует.")
+                    delay(3 * 60 * 1000L) // 10 минут
                 }
-
-                println("✅ Завершение фоновой задачи")
             }
 
         } catch (e: Exception) {
@@ -139,6 +145,7 @@ fun Application.module() {
 
         println("Завершение инициализации")
     }
+
 
 
 
@@ -190,17 +197,6 @@ suspend fun getSummaryFromOllama(text: String): String {
 }
 
 
-
-
-
-fun loadTorchScriptModel(): RubertPredictor {
-    val modelPath = Paths.get("resources/ml/ru_bert_traced.pt")  // обнови путь
-    return RubertPredictor(modelPath)
-}
-
-// --- Функции обработки текста и предсказания ---
-
-// --- Функции парсинга сайта ---
 
 suspend fun fetchLatestNews(): List<NewsArticle> = withContext(Dispatchers.IO) {
     val doc = Jsoup.connect("https://iz.ru/tag/selskoe-khoziaistvo").get()
