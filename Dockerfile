@@ -1,5 +1,9 @@
 FROM ubuntu:22.04
 
+# Устанавливаем локаль сразу после FROM
+ENV LANG=C.UTF-8
+ENV LC_ALL=C.UTF-8
+
 # Обновление и установка необходимых зависимостей
 RUN apt-get update && apt-get install -y \
     openjdk-11-jdk \

@@ -181,7 +181,7 @@ suspend fun getSummaryFromOllama(text: String): String {
 
 
     val request = OllamaRequest(
-        model = "llama3:latest",
+        model = "llama3:8b",
         prompt = prompt,
         stream = false
     )
