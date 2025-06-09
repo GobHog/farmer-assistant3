@@ -64,7 +64,9 @@ fun Application.module() {
         println("Запуск после старта приложения")
 
         try {
-            val modelPath = Paths.get("src/main/resources/ru_bert.onnx")  // обновлённый путь
+            val modelPath = Paths.get("src/main/resources/ru_bert.onnx")
+            val absPath = modelPath.toAbsolutePath()
+            println("Абсолютный путь к модели: $absPath")
 
             if (Files.exists(modelPath)) {
                 println("✅ Модель найдена по пути: $modelPath")
@@ -72,7 +74,14 @@ fun Application.module() {
                 println("❌ Модель не найдена по пути: $modelPath")
             }
 
-            val predictor = OnnxRubertPredictor(modelPath)
+            val predictor = try {
+                OnnxRubertPredictor(absPath)
+            } catch (e: Exception) {
+                println("❌ Ошибка при создании OnnxRubertPredictor:")
+                e.printStackTrace()
+                throw e  // проброс, чтобы остановить запуск, если критично
+            }
+
             println("✅ ONNX модель успешно загружена.")
 
 
