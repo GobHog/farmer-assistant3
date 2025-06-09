@@ -65,7 +65,7 @@ fun Application.module() {
         println("Запуск после старта приложения")
 
         try {
-            val modelPath = Paths.get("src/main/resources/ru_bert.onnx")  // путь к ONNX модели
+            val modelPath = Paths.get("app/src/main/resources/ru_bert.onnx")  // путь к ONNX модели
             val predictor = OnnxRubertPredictor(modelPath)
             println("✅ ONNX модель успешно загружена.")
 
