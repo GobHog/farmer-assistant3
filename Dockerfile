@@ -1,5 +1,8 @@
 FROM eclipse-temurin:11-jdk-alpine
 
+# Устанавливаем libstdc++
+RUN apk add --no-cache libstdc++
+
 WORKDIR /app
 
 # Скопировать JAR
