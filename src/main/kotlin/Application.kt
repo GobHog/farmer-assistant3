@@ -64,7 +64,7 @@ fun Application.module() {
         println("Запуск после старта приложения")
 
         try {
-            val modelPath = Paths.get("ru_bert.onnx")  // обновлённый путь
+            val modelPath = Paths.get("src/main/resources/ru_bert.onnx")  // обновлённый путь
 
             if (Files.exists(modelPath)) {
                 println("✅ Модель найдена по пути: $modelPath")
