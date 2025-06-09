@@ -40,6 +40,7 @@ import org.jsoup.Jsoup
 import net.dankito.readability4j.Readability4J
 import org.jetbrains.exposed.sql.SqlExpressionBuilder.eq
 import org.jetbrains.exposed.sql.selectAll
+import java.nio.file.Files
 import java.nio.file.Paths
 import java.time.LocalDate
 
@@ -63,9 +64,17 @@ fun Application.module() {
         println("Запуск после старта приложения")
 
         try {
-            val modelPath = Paths.get("src/main/resources/ru_bert.onnx")  // путь к ONNX модели
+            val modelPath = Paths.get("ru_bert.onnx")  // обновлённый путь
+
+            if (Files.exists(modelPath)) {
+                println("✅ Модель найдена по пути: $modelPath")
+            } else {
+                println("❌ Модель не найдена по пути: $modelPath")
+            }
+
             val predictor = OnnxRubertPredictor(modelPath)
             println("✅ ONNX модель успешно загружена.")
+
 
             val database = Database.connect(
                 url = "jdbc:postgresql://${System.getenv("DB_HOST")}:${System.getenv("DB_PORT")}/${System.getenv("DB_NAME")}",
