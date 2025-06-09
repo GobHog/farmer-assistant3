@@ -76,11 +76,12 @@ fun Application.module() {
 
             val predictor = try {
                 OnnxRubertPredictor(absPath)
-            } catch (e: Exception) {
-                println("❌ Ошибка при создании OnnxRubertPredictor:")
-                e.printStackTrace()
-                throw e  // проброс, чтобы остановить запуск, если критично
+            } catch (t: Throwable) {
+                println("❌ Ошибка при создании OnnxRubertPredictor: ${t.message}")
+                t.printStackTrace()
+                throw t
             }
+
 
             println("✅ ONNX модель успешно загружена.")
 
