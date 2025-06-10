@@ -40,7 +40,7 @@ dependencies {
     implementation(libs.ktor.server.auth.jwt)
     implementation(libs.ktor.server.netty)
     testImplementation(libs.ktor.server.test.host)
-
+    implementation(libs.ktor.server.forwarded.header)
     // Exposed
     implementation(libs.exposed.core)
     implementation(libs.exposed.jdbc)
