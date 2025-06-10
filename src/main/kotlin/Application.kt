@@ -45,8 +45,6 @@ import java.nio.file.Paths
 import java.time.LocalDate
 import io.ktor.server.plugins.forwardedheaders.ForwardedHeaders
 
-
-
 fun main() {
     embeddedServer(Netty, port = 8080, host = "0.0.0.0", module = Application::module)
         .start(wait = true)
