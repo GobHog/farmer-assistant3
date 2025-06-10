@@ -52,6 +52,7 @@ fun main() {
         .start(wait = true)
 }
 
+
 fun Application.module() {
     install(ForwardedHeaders) // автоматическая поддержка X-Forwarded-*
     configureSerialization()
